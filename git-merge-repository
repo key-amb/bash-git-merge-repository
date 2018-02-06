@@ -1,0 +1,102 @@
+#!/bin/bash
+
+set -euo pipefail
+
+SED=${CMD_SED:-sed}
+TARGET_REPO_URL=$1
+SUB_DIR=${2:-"$(basename $TARGET_REPO_URL)"}
+
+ORIGIN_URL=$(git config --get remote.origin.url)
+
+__exec() {
+  echo '[INFO]' $@
+  $@
+}
+
+echo "[START]"
+
+__exec git clone ${TARGET_REPO_URL} ${SUB_DIR}
+
+cd ${SUB_DIR}
+
+echo "[INFO] Exec git filter-branch to rewrite commits"
+git filter-branch --index-filter "
+  git ls-files -s \
+    | ${SED} 's@\t\\\"*@&${SUB_DIR}/@' \
+    | GIT_INDEX_FILE=\$GIT_INDEX_FILE.new \
+    git update-index --index-info \
+    && mv \$GIT_INDEX_FILE.new \$GIT_INDEX_FILE \
+    || true
+" -- HEAD
+
+__prompt() {
+  local question=$1
+  while true; do
+    echo -n ${question} "(Y/N)> "
+    read answer
+    if [ "${answer}" = "Y" ]; then
+      break
+    elif [ "${answer}" = "N" ]; then
+      echo "Exit"
+      exit 1
+    else
+      echo "Please answer Y/N"
+    fi
+  done
+}
+
+echo
+__prompt "Filter-branch seems succeeded. Continue?"
+
+__exec git remote set-url origin ${ORIGIN_URL}
+__exec git pull --rebase
+__exec git push origin master
+
+cd ..
+__exec rm -rf ${SUB_DIR}
+
+__exec git pull
+
+echo "[END]"
+
+exit 0
+
+: <<'__EOF__'
+
+=encoding utf8
+
+=head1 NAME
+
+B<git-merge-repository> - Git repository integrator
+
+=head1 SYNOPSYS
+
+    cd /path/to/parent-repository
+    git-merge-repository <Target Repository Url> [<Directory>]
+    # Mac OS
+    CMD_SED=gsed git-merge-repository <Target Repository Url> [<Directory>]
+
+=head1 DESCRIPTION
+
+This script merges another repository into subdirectory in your repository with
+its commits history.
+
+You should run this script at the top directory in parent repository.
+
+=head1 SEE ALSO
+
+L<http://qiita.com/edvakf@github/items/9e7ccbaa944d26f9b69c>
+
+=head1 AUTHORS
+
+YASUTAKE Kiyoshi E<lt>yasutake.kiyoshi@gmail.comE<gt>
+
+=head1 LICENSE
+
+The MIT License (MIT)
+
+Copyright (c) 2016 YASUTAKE Kiyoshi
+
+=cut
+
+__EOF__
